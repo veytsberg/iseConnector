@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{#  Welcome, {{ name }}!#}
+      <form method="POST" action="/" style="min-width: 500px; margin: 10px">
+      <div class="form-group">
+        <select class="form-select" aria-label="Default select example" name="groups" >
+            <option selected>Выберите группу:</option>
+            {% for group in groups %}
+                <option value="{{group}}">{{group}}</option>
+            {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <input type="mac" name="mac" class="form-control" id="macAddress" placeholder="MAC-адрес">
+      </div>
+      <button style="margin-top: 1rem" type="submit" class="btn btn-primary">Добавить</button>
+    </form>
+
+{% endblock %}
