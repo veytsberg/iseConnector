@@ -1,8 +1,10 @@
+import json
+import re
+from ldap3 import Server, Connection, ALL
 from flask import Blueprint
 from flask import render_template, redirect, url_for, request, flash
-from flask_login import LoginManager, UserMixin, login_required, login_user, logout_user
-from ldap3 import Server, Connection, ALL
-import json
+from flask_login import UserMixin, login_required, login_user, logout_user
+
 
 auth = Blueprint('auth', __name__)
 
@@ -26,27 +28,31 @@ class User(UserMixin):
 
 @auth.route('/login')
 def login():
-    print(users)
-    return render_template('login.html')
+    return render_template('login.html', auth_result='')
 
 
 @auth.route('/login', methods=["POST"])
 def login_post():
     username = request.form.get('email')
     passwd = request.form.get('password')
-    remember = True if request.form.get('remember') else False
-
-    s = Server(constants["LDAP_SERVER"], port=636, use_ssl=True, get_info=ALL)
+    user = None
+    s = Server(constants["LDAP_SERVER"], port=constants["LDAP_PORT"], use_ssl=True, get_info=ALL)
     c = Connection(s, user=username, password=passwd)
-    user = User(username) if c.bind() == True else None  # check user's credentials
+    c.bind()
+    login_without_domain = re.findall(r'^[\w\d]+', username)[0]
+
+    # check user's credentials
+    if c.result['description'] == 'success':
+        search_res = c.search(f'ou=sites,dc={constants["DOMAIN"]}', f"(&(objectClass=person)(sAMAccountName={login_without_domain}))")
+        if search_res:
+            dn = c.entries[0].entry_dn
+            user = User(username) if re.search(constants["AD_GROUP"], dn) else None
     c.unbind()  # ends the user’s session and close the socket
 
     if user is None:
-        flash('Please check your login details and try again.')
-        return render_template('login.html')
+        return render_template('login.html', auth_result='Неверные данные.')
     users[hash(user.username)] = user
-    login_user(user, remember=remember)
-    print(remember)
+    login_user(user)
     return redirect(url_for('index'))
 
 

@@ -1,9 +1,12 @@
-from flask import Flask, redirect, url_for, render_template
+import os
+import requests
+
+from flask import Flask, redirect, url_for, render_template, request
 from flask_login import LoginManager
 from flask_login import login_required, current_user
-from auth import users
+
 from auth import auth as auth_blueprint
-import os, requests
+from auth import users, constants
 
 app = Flask(__name__)
 SECRET_KEY = os.urandom(32)
@@ -15,14 +18,29 @@ login_manager.login_view = 'auth.login'
 login_manager.init_app(app)
 
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
-    print(current_user)
-    if not current_user or current_user.is_anonymous:
-        return redirect(url_for('auth.login'))
-    groups = ['Телефон', 'Принтер', 'Камера']
-    return render_template('index.html', name=current_user.username, groups=groups)
+    view_groups = {"VoIP": "Телефоны", "MFU": "Принтеры", "Camera": "Камеры"}
+    if request.method == 'POST':
+        mac_address = request.form.get('mac').upper()
+        group = request.form.get('groups')
+        err_result = f'Результат:\n {current_user.username}, MAC адрес {mac_address} не добавлен. \n Причина: ' \
+                     f'Проблемы на стороне сервера или ISE. '
+        try:
+            group_id = get_endpointgroup_by_name(group)
+            status_code = append_mac_to_endpointgroup(mac_address, group_id)
+            if status_code == 200 or status_code == 201:
+                result = f'Результат:\n {current_user.username}, MAC адрес: {mac_address} успешно добавлен в группу {group}.'
+            else:
+                result = err_result
+        except:
+            result = err_result
+        return render_template('index.html', groups=view_groups, result=result)
+    else:
+        if not current_user or current_user.is_anonymous:
+            return redirect(url_for('auth.login'))
+        return render_template('index.html', groups=view_groups)
 
 
 @login_manager.user_loader
@@ -32,21 +50,40 @@ def load_user(id):
     return None
 
 
-def check_endpoint_if_exist():
-    pass
+headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
+server = constants['ISE_URLS']
+ers_login = constants['ISE_USER']
+ers_passwd = constants['ISE_PASS']
+endpoint_groups = constants['ENDPOINT_GROUPS']
 
 
-def get_endpointgroup_by_name():
-    pass
+def check_endpoint_if_exist(mac_addr):
+    check_endpoint_url = f'{server}endpoint/name/{mac_addr}'
+    resp = requests.get(check_endpoint_url, headers=headers, auth=(ers_login, ers_passwd), verify=False)
+    if resp.status_code == 200:
+        return resp.json()['ERSEndPoint']['id']
+    return None
 
 
-def append_mac_to_endpointgroup():
-    if check_endpoint_if_exist():
-        # put
-        return
-    # post
-    return
+def get_endpointgroup_by_name(name):
+    get_endpointgroup_url = f'{server}endpointgroup/name/{name}'
+    resp = requests.get(get_endpointgroup_url, headers=headers, auth=(ers_login, ers_passwd), verify=False)
+    if resp.status_code == 200:
+        return resp.json()['EndPointGroup']['id']
+    return None
+
+
+def append_mac_to_endpointgroup(mac_addr, group_id):
+    endpoint_id = check_endpoint_if_exist(mac_addr)
+    data = {"ERSEndPoint": {"name": mac_addr, "mac": mac_addr, "staticGroupAssignment": True, "groupId": group_id}}
+    if endpoint_id:
+        update_url = f'{server}endpoint/{endpoint_id}'
+        resp = requests.put(update_url, auth=(ers_login, ers_passwd), verify=False, json=data, headers=headers)
+    else:
+        add_url = f'{server}endpoint/'
+        resp = requests.post(add_url, auth=(ers_login, ers_passwd), verify=False, json=data, headers=headers)
+    return resp.status_code
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
