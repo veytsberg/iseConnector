@@ -2,28 +2,39 @@ import json
 import re
 from ldap3 import Server, Connection, ALL
 from flask import Blueprint
-from flask import render_template, redirect, url_for, request, flash
-from flask_login import UserMixin, login_required, login_user, logout_user
-
+from flask import render_template, redirect, url_for, request
+from flask_login import UserMixin, login_required, login_user, logout_user, current_user
+from flask_sqlalchemy import SQLAlchemy
 
 auth = Blueprint('auth', __name__)
+db = SQLAlchemy()
 
-users = {}
-
-with open('constants.json') as json_file:
+with open('constants.json', encoding='utf8') as json_file:
     constants = json.load(json_file)
 
 
-class User(UserMixin):
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String, unique=True)
+
     def __init__(self, username):
-        self.id = hash(username)
         self.username = username
 
-    def __repr__(self):
-        return self.username
-
-    def get_id(self):
-        return self.id
+    @staticmethod
+    def try_login(username, passwd):
+        login_without_domain = re.findall(r'^[\w\d]+', username)[0]
+        s = Server(constants["LDAP_SERVER"], port=constants["LDAP_PORT"], use_ssl=True, get_info=ALL)
+        c = Connection(s, user=username, password=passwd)
+        c.bind()
+        if c.result['description'] == 'success':
+            search_res = c.search(f'ou=sites,dc={constants["DOMAIN"]}',
+                                  f"(&(objectClass=person)(sAMAccountName={login_without_domain}))")
+            if search_res:
+                dn = c.entries[0].entry_dn
+                if re.search(constants["AD_GROUP"], dn):
+                    return True
+        c.unbind()  # ends the user’s session and close the socket
+        return False
 
 
 @auth.route('/login')
@@ -35,23 +46,15 @@ def login():
 def login_post():
     username = request.form.get('email')
     passwd = request.form.get('password')
-    user = None
-    s = Server(constants["LDAP_SERVER"], port=constants["LDAP_PORT"], use_ssl=True, get_info=ALL)
-    c = Connection(s, user=username, password=passwd)
-    c.bind()
-    login_without_domain = re.findall(r'^[\w\d]+', username)[0]
 
-    # check user's credentials
-    if c.result['description'] == 'success':
-        search_res = c.search(f'ou=sites,dc={constants["DOMAIN"]}', f"(&(objectClass=person)(sAMAccountName={login_without_domain}))")
-        if search_res:
-            dn = c.entries[0].entry_dn
-            user = User(username) if re.search(constants["AD_GROUP"], dn) else None
-    c.unbind()  # ends the user’s session and close the socket
-
-    if user is None:
+    if not User.try_login(username, passwd):
         return render_template('login.html', auth_result='Неверные данные.')
-    users[hash(user.username)] = user
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        user = User(username)
+        db.session.add(user)
+        db.session.commit()
     login_user(user)
     return redirect(url_for('index'))
 
@@ -59,5 +62,7 @@ def login_post():
 @auth.route('/logout')
 @login_required
 def logout():
+    db.session.delete(current_user)
+    db.session.commit()
     logout_user()
     return redirect(url_for('auth.login'))

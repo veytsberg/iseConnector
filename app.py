@@ -6,12 +6,19 @@ from flask_login import LoginManager
 from flask_login import login_required, current_user
 
 from auth import auth as auth_blueprint
-from auth import users, constants
+from auth import constants, db, User
 
 app = Flask(__name__)
 SECRET_KEY = os.urandom(32)
 app.secret_key = SECRET_KEY
 app.register_blueprint(auth_blueprint)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = constants['DATABASE_URI']
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
+
+with app.app_context():
+    db.create_all()
 
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
@@ -45,9 +52,7 @@ def index():
 
 @login_manager.user_loader
 def load_user(id):
-    if id in users:
-        return users[id]
-    return None
+    return User.query.get(id)
 
 
 headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
