@@ -35,6 +35,7 @@ def index():
     if request.method == 'POST':
         mac_address = request.form.get('mac').upper()
         group = request.form.get('groups')
+        description = request.form.get('description')
         err_result = f'Результат:\n {current_user.username}, MAC адрес {mac_address} не добавлен. \n Причина: ' \
                      f'Проблемы на стороне сервера или ISE. '
         try:

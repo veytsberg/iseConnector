@@ -44,7 +44,7 @@ def login():
 
 @auth.route('/login', methods=["POST"])
 def login_post():
-    username = request.form.get('email')
+    username = request.form.get('username')
     passwd = request.form.get('password')
 
     if not User.try_login(username, passwd):
