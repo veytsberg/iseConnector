@@ -1,6 +1,9 @@
 import os
 import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from datetime import datetime
 
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from flask import Flask, redirect, url_for, render_template, request
 from flask_login import LoginManager
 from flask_login import login_required, current_user
@@ -36,7 +39,7 @@ def index():
                      f'Проблемы на стороне сервера или ISE. '
         try:
             group_id = get_endpointgroup_by_name(group)
-            status_code = append_mac_to_endpointgroup(mac_address, group_id)
+            status_code = append_mac_to_endpointgroup(mac_address, group_id, current_user.username, description)
             if status_code == 200 or status_code == 201:
                 result = f'Результат:\n {current_user.username}, MAC адрес: {mac_address} успешно добавлен в группу {group}.'
             else:
@@ -78,9 +81,10 @@ def get_endpointgroup_by_name(name):
     return None
 
 
-def append_mac_to_endpointgroup(mac_addr, group_id):
+def append_mac_to_endpointgroup(mac_addr, group_id, username, description):
     endpoint_id = check_endpoint_if_exist(mac_addr)
-    data = {"ERSEndPoint": {"name": mac_addr, "mac": mac_addr, "staticGroupAssignment": True, "groupId": group_id}}
+    current_time = datetime.now().strftime("%d.%m.%y %H:%M:%S")
+    data = {"ERSEndPoint": {"name": mac_addr, "mac": mac_addr, "staticGroupAssignment": True, "groupId": group_id, "description": f"{username}; {current_time}; {description}"}}
     if endpoint_id:
         update_url = f'{server}endpoint/{endpoint_id}'
         resp = requests.put(update_url, auth=(ers_login, ers_passwd), verify=False, json=data, headers=headers)

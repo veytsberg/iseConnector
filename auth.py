@@ -22,13 +22,13 @@ class User(UserMixin, db.Model):
 
     @staticmethod
     def try_login(username, passwd):
-        login_without_domain = re.findall(r'^[\w\d]+', username)[0]
+        domain = constants["DOMAIN"]
         s = Server(constants["LDAP_SERVER"], port=constants["LDAP_PORT"], use_ssl=True, get_info=ALL)
-        c = Connection(s, user=username, password=passwd)
+        c = Connection(s, user=f'{username}@{domain}', password=passwd)
         c.bind()
         if c.result['description'] == 'success':
-            search_res = c.search(f'ou=sites,dc={constants["DOMAIN"]}',
-                                  f"(&(objectClass=person)(sAMAccountName={login_without_domain}))")
+            search_res = c.search(f'ou=sites,dc={domain}',
+                                  f"(&(objectClass=person)(sAMAccountName={username}))")
             if search_res:
                 dn = c.entries[0].entry_dn
                 if re.search(constants["AD_GROUP"], dn):
